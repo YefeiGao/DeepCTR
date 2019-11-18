@@ -10,7 +10,7 @@ from deepctr.inputs import SparseFeat, VarLenSparseFeat, get_feature_names
 if __name__ == "__main__":
   input_type = "textline"
   num_epochs = 1
-  batch_size = 256
+  batch_size = 1024
   max_varlen = 5
   num_train = 221102858
   num_test = 2233373
@@ -56,7 +56,7 @@ if __name__ == "__main__":
   def get_dataset(files, parse_function, num_parallel_calls=10, batch_size=256):
     print('Parsing', files)
     dataset = tf.data.TFRecordDataset(files)
-    dataset = dataset.map(lambda item: parse_function(item, feat_name_list, sparse_feat_col_ids, varlen_feat_col_ids, is_training=True),
+    dataset = dataset.map(lambda item: parse_function(item, is_training=True),
                           num_parallel_calls=num_parallel_calls)
     # dataset = dataset.shuffle(buffer_size=batch_size*10, reshuffle_each_iteration=True)
     try:
