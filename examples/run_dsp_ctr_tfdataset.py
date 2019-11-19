@@ -65,11 +65,14 @@ if __name__ == "__main__":
       dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batch_size))
 
     dataset = dataset.prefetch(batch_size * 10)
-    #return dataset.make_one_shot_iterator()
-    iterator = dataset.make_one_shot_iterator()
-    return iterator
+    # return dataset
+    return dataset.make_one_shot_iterator()
+    # iterator = dataset.make_one_shot_iterator()
+    # feats, label = iterator.get_next()
+    # # return iterator
+    # return feats, label
 
-  train_dataset = get_dataset(train_file_list, parse_example, batch_size=batch_size)
+  train_iter = get_dataset(train_file_list, parse_example, batch_size=batch_size)
   # test_dataset = get_dataset(test_file_list, parse_example, batch_size=batch_size)
 
   # 2.count #unique features for each sparse field and generate feature config for sequence feature
@@ -90,7 +93,7 @@ if __name__ == "__main__":
   model = DeepFM(linear_feature_columns, dnn_feature_columns, task='binary')
 
   model.compile("adam", "binary_crossentropy", metrics=['binary_crossentropy'], )
-  history = model.fit(train_dataset,
+  history = model.fit(train_iter,
                       steps_per_epoch=num_train // batch_size,
                       epochs=num_epochs,
                       )

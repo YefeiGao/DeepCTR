@@ -3,11 +3,19 @@ import tensorflow as tf
 import glob
 sys.path.append("../")
 from tensorflow.python.keras.backend import set_session
+
+from tensorflow.python.keras.callbacks import ModelCheckpoint, TensorBoard
 from deepctr.models import DeepFM
 from deepctr.inputs import SparseFeat, VarLenSparseFeat, get_feature_names
 
 
 if __name__ == "__main__":
+  model_path = '../model/'
+  if not os.path.exists(model_path):
+    os.mkdir(model_path)
+  log_dir = '../logs/'
+  if not os.path.exists(model_path):
+    os.mkdir(log_dir)
   input_type = "textline"
   num_epochs = 1
   batch_size = 1024
@@ -75,7 +83,7 @@ if __name__ == "__main__":
     return dataset
 
   train_dataset = get_dataset(train_file_list, parse_example, batch_size=batch_size)
-  # test_dataset = get_dataset(test_file_list, parse_example, batch_size=batch_size)
+  test_dataset = get_dataset(test_file_list, parse_example, batch_size=batch_size)
 
   # 2.count #unique features for each sparse field and generate feature config for sequence feature
   fixlen_feature_columns = [SparseFeat(feat, bucket_size)
@@ -93,9 +101,18 @@ if __name__ == "__main__":
 
   # 4.Define Model,compile and train
   model = DeepFM(linear_feature_columns, dnn_feature_columns, task='binary')
-
+  model.summary()
   model.compile("adam", "binary_crossentropy", metrics=['binary_crossentropy'], )
+  # checkpoit = ModelCheckpoint(filepath=os.path.join(model_path, 'model-{epoch:02d}.h5'))
+  checkpoit = ModelCheckpoint(filepath=os.path.join(model_path, 'model-{epoch:02d}.h5'), monitor='val_acc', verbose=1,
+                              save_best_only=True, mode='max')
+  tensorboard = TensorBoard(log_dir=log_dir, histogram_freq=0, write_graph=True, write_images=True)
+
   history = model.fit(train_dataset,
                       steps_per_epoch=num_train // batch_size,
-                      epochs=num_epochs)
+                      epochs=num_epochs,
+                      verbose=1,
+                      callbacks=[checkpoit, tensorboard],
+                      validation_data=test_dataset,
+                      validation_steps=num_test // batch_size)
 
