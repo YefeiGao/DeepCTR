@@ -6,9 +6,10 @@ import argparse
 import tensorflow as tf
 
 sys.path.append("../")
+from sklearn.metrics import roc_auc_score
 from tensorflow.python.keras.backend import set_session, get_session
-from tensorflow.python.keras.callbacks import ModelCheckpoint, TensorBoard
-from deepctr.models import PNN, FNN, DeepFM
+from tensorflow.python.keras.callbacks import Callback, ModelCheckpoint, TensorBoard
+from deepctr.models import PNN, FNN, DeepFM, DCN
 from deepctr.inputs import SparseFeat, VarLenSparseFeat
 
 
@@ -47,7 +48,7 @@ def get_feature_info(feature_config_file):
     for line in ff.readlines():
       field_id, _, field_name, _, bucket_size, feature_class, padding_size = line.strip().split("\t")
       if bucket_size == "-1":
-        bucket_size = 1000
+        bucket_size = 1001
       if feature_class == "multi-cat":
         varlen_features[field_name] = [int(field_id), int(bucket_size), int(padding_size)]
       else:
@@ -55,10 +56,40 @@ def get_feature_info(feature_config_file):
   return sparse_features, varlen_features
 
 
-def auc(y_true, y_pred):
-  tf_auc = tf.metrics.auc(y_true, y_pred)[1]
-  get_session().run(tf.local_variables_initializer())
-  return tf_auc
+# auc tools 2
+def as_keras_metric(method):
+  import functools
+  @functools.wraps(method)
+  def wrapper(self, args, **kwargs):
+    """ Wrapper for turning tensorflow metrics into keras metrics """
+    value, update_op = method(self, args, **kwargs)
+    get_session().run(tf.local_variables_initializer())
+    with tf.control_dependencies([update_op]):
+      value = tf.identity(value)
+    return value
+  return wrapper
+
+
+@as_keras_metric
+def AUROC(y_true, y_pred, curve='ROC'):
+  return tf.metrics.auc(y_true, y_pred, curve=curve)
+
+
+class RocAucMetric(Callback):
+  def on_train_begin(self, logs={}):
+    # By default, self.params['metrics'] contains loss and the metric assigned in `model.compile()`
+    if not 'val_roc_auc' in self.params['metrics']:
+      self.params['metrics'].append('val_roc_auc')
+    logs['val_roc_auc'] = float('-inf')
+
+  def on_epoch_end(self, epoch, logs=None):
+    if epoch % 10 == 0:
+      x_test = self.validation_data[0]
+      print(x_test)
+      y_test = self.validation_data[1]
+      predictions = self.model.predict_on_batch(x_test)
+      score = roc_auc_score(y_test, predictions)
+      logs['val_roc_auc'] = score
 
 
 def main():
@@ -98,6 +129,7 @@ def main():
     dataset = dataset.map(lambda line: parse_function(line, sparse_feats, varlen_feats, is_training=True),
                           num_parallel_calls=num_parallel_calls)
     dataset = dataset.shuffle(buffer_size=batch_size, reshuffle_each_iteration=True)
+    dataset.repeat(10)
     try:
       dataset = dataset.batch(batch_size, drop_remainder=True)
     except:
@@ -123,20 +155,22 @@ def main():
 
   # 4.Define Model,compile and train
   # model = PNN(dnn_feature_columns, use_inner=True, use_outter=True, task='binary')
-  model = FNN(linear_feature_columns, dnn_feature_columns, task='binary')
-  model.summary()
-  model.compile("adam", "binary_crossentropy", metrics=['binary_crossentropy', auc], )
-  checkpoint = ModelCheckpoint(filepath=os.path.join(args.model_dir, 'model-{epoch:02d}.h5'), monitor=auc, verbose=1,
-                               save_best_only=True, mode='max')
+  # model = FNN(linear_feature_columns, dnn_feature_columns, task='binary')
+  # model = DCN(linear_feature_columns, dnn_feature_columns, task='binary')
+  model = DeepFM(linear_feature_columns, dnn_feature_columns, task='binary')
+  # model.summary()
+  model.compile("adam", "binary_crossentropy", metrics=["accuracy", AUROC], )
+  checkpoint = ModelCheckpoint(filepath=os.path.join(args.model_dir, 'model-{epoch:02d}-{loss:05f}.h5'), monitor='loss', verbose=1,
+                               save_best_only=True, mode='min')
+  # checkpoint = ModelCheckpoint(filepath=os.path.join(args.model_dir, 'model-dsp-ctr-best.h5'), monitor='loss', verbose=1,
+  #                              save_best_only=True, mode='min')
   tensorboard = TensorBoard(log_dir=args.log_dir, histogram_freq=0, write_graph=True, write_images=True)
 
   history = model.fit(train_dataset,
-                      steps_per_epoch=args.train_size // args.batch_size,
+                      steps_per_epoch=args.train_size // (args.batch_size * args.num_epoch),
                       epochs=args.num_epoch,
-                      verbose=1,
-                      callbacks=[checkpoint, tensorboard],
-                      validation_data=test_dataset,
-                      validation_steps=args.test_size // args.batch_size)
+                      verbose=0,
+                      callbacks=[checkpoint, tensorboard])
 
 
 if __name__ == '__main__':
