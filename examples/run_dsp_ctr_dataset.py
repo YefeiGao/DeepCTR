@@ -42,18 +42,30 @@ def parse_args():
 
 
 def get_feature_info(feature_config_file):
+  linear_sparse_features = {}
   sparse_features = {}
   varlen_features = {}
+  linear_varlen_features = {}
   with open(feature_config_file, 'r') as ff:
     for line in ff.readlines():
-      field_id, _, field_name, _, bucket_size, feature_class, padding_size = line.strip().split("\t")
-      if bucket_size == "-1":
-        bucket_size = 1001
-      if feature_class == "multi-cat":
-        varlen_features[field_name] = [int(field_id), int(bucket_size), int(padding_size)]
+      field_id, _, field_name, _, bucket_size, feature_class, padding_size, wd = line.strip().split("\t")
+      if wd == "w&d":
+        if bucket_size == "-1":
+          bucket_size = 1002
+        if feature_class == "multi-cat":
+          varlen_features[field_name] = [int(field_id), int(bucket_size), int(padding_size)]
+          linear_varlen_features[field_name] = [int(field_id), int(bucket_size), int(padding_size)]
+        else:
+          sparse_features[field_name] = [int(field_id), int(bucket_size)]
+          linear_sparse_features[field_name] = [int(field_id), int(bucket_size)]
       else:
-        sparse_features[field_name] = [int(field_id), int(bucket_size)]
-  return sparse_features, varlen_features
+        if bucket_size == "-1":
+          bucket_size = 1002
+        if feature_class == "multi-cat":
+          linear_varlen_features[field_name] = [int(field_id), int(bucket_size), int(padding_size)]
+        else:
+          linear_sparse_features[field_name] = [int(field_id), int(bucket_size)]
+  return sparse_features, varlen_features, linear_sparse_features, linear_varlen_features
 
 
 # auc tools 2
@@ -137,15 +149,18 @@ def main():
     dataset = dataset.prefetch(batch_size)
     return dataset
 
-  sparse_features, varlen_features = get_feature_info(args.feat_config)
-  train_dataset = get_dataset(train_file_list, example_parser, sparse_features, varlen_features, args.data_type, batch_size=args.batch_size)
-  test_dataset = get_dataset(test_file_list, example_parser, sparse_features, varlen_features, args.data_type, batch_size=args.batch_size)
+  sparse_features, varlen_features, linear_sparse_features, linear_varlen_features = get_feature_info(args.feat_config)
+  train_dataset = get_dataset(train_file_list, example_parser, linear_sparse_features, linear_varlen_features, args.data_type, batch_size=args.batch_size)
+  test_dataset = get_dataset(test_file_list, example_parser, linear_sparse_features, linear_varlen_features, args.data_type, batch_size=args.batch_size)
 
   # 2.count #unique features for each sparse field and generate feature config for sequence feature
   fixlen_feature_columns = [SparseFeat(feat, feat_info[1]) for feat, feat_info in sparse_features.items()]
+  linear_fixlen_feature_columns = [SparseFeat(feat, feat_info[1]) for feat, feat_info in linear_sparse_features.items()]
   varlen_feature_columns = [VarLenSparseFeat(feat, feat_info[1], feat_info[2], 'mean')
                             for feat, feat_info in varlen_features.items()]  # Notice : value 0 is for padding for sequence input feature
-  linear_feature_columns = fixlen_feature_columns + varlen_feature_columns
+  linear_varlen_feature_columns = [VarLenSparseFeat(feat, feat_info[1], feat_info[2], 'mean')
+                            for feat, feat_info in linear_varlen_features.items()]  # Notice : value 0 is for padding for sequence input feature
+  linear_feature_columns = linear_fixlen_feature_columns + linear_varlen_feature_columns
   dnn_feature_columns = fixlen_feature_columns + varlen_feature_columns
 
   config = tf.ConfigProto()
