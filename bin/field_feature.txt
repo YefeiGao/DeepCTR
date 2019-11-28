@@ -43,11 +43,11 @@
 43	12	statis.cross.ctr_areap_win	12|ctr_areap_win	1002	multi-cat	5	w&d
 44	12	statis.cross.tr_areac_win	12|ctr_areac_win	1002	multi-cat	5	w&d
 45	205	statis.mtagec.statis.mtagcoec	205|midtagec	1002	multi-cat	5	w&d
-46	56	srcquery.srcscore	56|src	-1	multi-cat	5	w&d
-47	61	statis.tag_ls_coec	61|	-1	cat	1	w&d
-48	62	statis.tag_hour_coec	62|	-1	cat	1	w&d
-49	64	statis.tag_areaccoec	64|	-1	cat	1	w&d
-50	65	statis.top_term_co	65|top	-1	cat	1	w&d
+46	56	srcquery.srcscore	56|src	1002	multi-cat	5	w&d
+47	61	statis.tag_ls_coec	61|	1002	cat	1	w&d
+48	62	statis.tag_hour_coec	62|	1002	cat	1	w&d
+49	64	statis.tag_areaccoec	64|	1002	cat	1	w&d
+50	65	statis.top_term_co	65|top	1002	cat	1	w&d
 51	208	mid.mtypeec.mid.mtypecoec	208|midtypeec	1502	cat	1	w&d
 52	211	mid.mlsec.mid.mlscoec	211|midlsec	1502	cat	1	w&d
 53	5	context.site	5|ls	2002	cat	1	w&d
@@ -74,7 +74,3 @@
 74	10	literal.raw.query	10|qid	5000002	multi-cat	5	w&d
 75	44	srcquery.srcquery	44|sq	24500002	multi-cat	5	w&d
 76	47	srcquery.srcexpand	47|sexp	150000002	multi-cat	5	w
-77	28	context.site.querydict.cluster	28|ls	200000002	multi-cat	5	w
-78	49	srcquery.srcweight	49|swei	210000002	multi-cat	5	w
-79	45	srcquery.srccurquery	45|scq	260000002	multi-cat	5	w
-80	51	srcquery.srcdayoffset	51|soff	300000002	multi-cat	5	w
