@@ -63,7 +63,7 @@ def DeepFM(linear_feature_columns, dnn_feature_columns, embedding_size=8, use_fm
     final_logit = linear_logit
   elif len(dnn_hidden_units) == 0 and use_fm == True:  # linear + FM
     final_logit = tf.keras.layers.add([linear_logit, fm_logit])
-  elif len(dnn_hidden_units) > 0 and use_fm == False:  # linear +　Deep
+  elif len(dnn_hidden_units) > 0 and use_fm == False:  # linear + Deep
     final_logit = tf.keras.layers.add([linear_logit, dnn_logit])
   elif len(dnn_hidden_units) > 0 and use_fm == True:  # linear + FM + Deep
     final_logit = tf.keras.layers.add([linear_logit, fm_logit, dnn_logit])

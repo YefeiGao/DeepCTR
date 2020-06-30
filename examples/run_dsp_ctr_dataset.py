@@ -1,15 +1,17 @@
 import glob
 import os
 import sys
-
+import time
 import argparse
+import numpy as np
 import tensorflow as tf
 
 sys.path.append("../")
+# os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 from sklearn.metrics import roc_auc_score
-from tensorflow.python.keras.backend import set_session, get_session
+from tensorflow.python.keras.backend import set_session, get_session, count_params
 from tensorflow.python.keras.callbacks import Callback, ModelCheckpoint, TensorBoard
-from deepctr.models import PNN, FNN, DeepFM, DCN
+from deepctr.models import DeepFM, AFM, NFM, DIN
 from deepctr.inputs import SparseFeat, VarLenSparseFeat
 
 
@@ -68,6 +70,43 @@ def get_feature_info(feature_config_file):
   return sparse_features, varlen_features, linear_sparse_features, linear_varlen_features
 
 
+def example_parser(example, sparse_feat_ids, varlen_feat_ids, is_training=True):
+  columns = tf.string_split([example], '\t')
+  label = {"prediction_layer": tf.string_to_number([columns.values[0]], out_type=tf.int64)}
+  feature = {}
+  sparse_feats = {feat: tf.string_to_number([columns.values[sparse_feat_ids[feat][0]]], out_type=tf.int64)
+                  for feat in sparse_feat_ids.keys()}
+  feature.update(sparse_feats)
+  varlen_feats = {}
+  for feat, feat_info in varlen_feat_ids.items():
+    multi_cat_feat_padding = tf.zeros([feat_info[2]], tf.int64)
+    multi_cat_feat = tf.string_split([columns.values[feat_info[0]]], ":")
+    multi_cat_feat = tf.string_to_number(multi_cat_feat.values, out_type=tf.int64)
+    multi_cat_feat = tf.concat([multi_cat_feat, multi_cat_feat_padding], 0)[:feat_info[2]]
+    varlen_feats[feat] = multi_cat_feat
+
+  feature.update(varlen_feats)
+  return feature, label
+
+
+def get_dataset(files, parse_function, sparse_feats, varlen_feats, data_type, num_parallel_calls=10, batch_size=256):
+  print('Parsing', files)
+  if data_type == "textline":
+    dataset = tf.data.TextLineDataset(files)
+  elif data_type == "tfrecords":
+    dataset = tf.data.TFRecordDataset(files)
+  dataset = dataset.map(lambda line: parse_function(line, sparse_feats, varlen_feats, is_training=True),
+                        num_parallel_calls=num_parallel_calls)
+  dataset = dataset.shuffle(buffer_size=batch_size, reshuffle_each_iteration=True)
+  dataset.repeat(10)
+  try:
+    dataset = dataset.batch(batch_size, drop_remainder=True)
+  except:
+    dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batch_size))
+  dataset = dataset.prefetch(batch_size)
+  return dataset
+
+
 # auc tools 2
 def as_keras_metric(method):
   import functools
@@ -111,45 +150,16 @@ def main():
   if not os.path.exists(args.log_dir):
     os.mkdir(args.log_dir)
 
+  config = tf.ConfigProto()
+  config.gpu_options.allow_growth = True
+  # config.gpu_options.per_process_gpu_memory_fraction = 0.9
+  set_session(tf.Session(config=config))
+
   train_file_list = glob.glob(os.path.join(args.train_data, "*"))
   test_file_list = glob.glob(os.path.join(args.test_data, "*"))
 
-  def example_parser(example, sparse_feat_ids, varlen_feat_ids, is_training=True):
-    columns = tf.string_split([example], '\t')
-    label = {"prediction_layer": tf.string_to_number([columns.values[0]], out_type=tf.int64)}
-    feature = {}
-    sparse_feats = {feat: tf.string_to_number([columns.values[sparse_feat_ids[feat][0]]], out_type=tf.int64)
-                    for feat in sparse_feat_ids.keys()}
-    feature.update(sparse_feats)
-    varlen_feats = {}
-    for feat, feat_info in varlen_feat_ids.items():
-      multi_cat_feat_padding = tf.zeros([feat_info[2]], tf.int64)
-      multi_cat_feat = tf.string_split([columns.values[feat_info[0]]], ":")
-      multi_cat_feat = tf.string_to_number(multi_cat_feat.values, out_type=tf.int64)
-      multi_cat_feat = tf.concat([multi_cat_feat, multi_cat_feat_padding], 0)[:feat_info[2]]
-      varlen_feats[feat] = multi_cat_feat
-
-    feature.update(varlen_feats)
-    return feature, label
-
-  def get_dataset(files, parse_function, sparse_feats, varlen_feats, data_type, num_parallel_calls=10, batch_size=256):
-    print('Parsing', files)
-    if data_type == "textline":
-      dataset = tf.data.TextLineDataset(files)
-    elif data_type == "tfrecords":
-      dataset = tf.data.TFRecordDataset(files)
-    dataset = dataset.map(lambda line: parse_function(line, sparse_feats, varlen_feats, is_training=True),
-                          num_parallel_calls=num_parallel_calls)
-    dataset = dataset.shuffle(buffer_size=batch_size, reshuffle_each_iteration=True)
-    dataset.repeat(10)
-    try:
-      dataset = dataset.batch(batch_size, drop_remainder=True)
-    except:
-      dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(batch_size))
-    dataset = dataset.prefetch(batch_size)
-    return dataset
-
   sparse_features, varlen_features, linear_sparse_features, linear_varlen_features = get_feature_info(args.feat_config)
+
   train_dataset = get_dataset(train_file_list, example_parser, linear_sparse_features, linear_varlen_features, args.data_type, batch_size=args.batch_size)
   test_dataset = get_dataset(test_file_list, example_parser, linear_sparse_features, linear_varlen_features, args.data_type, batch_size=args.batch_size)
 
@@ -163,28 +173,28 @@ def main():
   linear_feature_columns = linear_fixlen_feature_columns + linear_varlen_feature_columns
   dnn_feature_columns = fixlen_feature_columns + varlen_feature_columns
 
-  config = tf.ConfigProto()
-  config.gpu_options.allow_growth = True
-  config.gpu_options.per_process_gpu_memory_fraction = 0.9
-  set_session(tf.Session(config=config))
-
   # 4.Define Model,compile and train
   # model = PNN(dnn_feature_columns, use_inner=True, use_outter=True, task='binary')
   # model = FNN(linear_feature_columns, dnn_feature_columns, task='binary')
   # model = DCN(linear_feature_columns, dnn_feature_columns, task='binary')
-  model = DeepFM(linear_feature_columns, dnn_feature_columns, task='binary')
+  model = DeepFM(linear_feature_columns, dnn_feature_columns, dnn_hidden_units=[], use_fm=False, task='binary')
+
+  trainable_count = int(np.sum([count_params(p) for p in set(model.trainable_weights)]))
+  non_trainable_count = int(np.sum([count_params(p) for p in set(model.non_trainable_weights)]))
+  print('Total params: {:,}'.format(trainable_count + non_trainable_count))
+  print('Trainable params: {:,}'.format(trainable_count))
+  print('Non-trainable params: {:,}'.format(non_trainable_count))
+
   # model.summary()
-  model.compile("adam", "binary_crossentropy", metrics=["accuracy", AUROC], )
-  checkpoint = ModelCheckpoint(filepath=os.path.join(args.model_dir, 'model-{epoch:02d}-{loss:05f}.h5'), monitor='loss', verbose=1,
-                               save_best_only=True, mode='min')
-  # checkpoint = ModelCheckpoint(filepath=os.path.join(args.model_dir, 'model-dsp-ctr-best.h5'), monitor='loss', verbose=1,
-  #                              save_best_only=True, mode='min')
+  model.compile("sgd", "binary_crossentropy", metrics=["accuracy", AUROC], )
+  checkpoint = ModelCheckpoint(filepath=os.path.join(args.model_dir, 'model-{epoch:02d}-{loss:05f}.h5'), monitor='loss',
+                               verbose=1, save_best_only=True, mode='min')
   tensorboard = TensorBoard(log_dir=args.log_dir, histogram_freq=0, write_graph=True, write_images=True)
 
   history = model.fit(train_dataset,
                       steps_per_epoch=args.train_size // (args.batch_size * args.num_epoch),
                       epochs=args.num_epoch,
-                      verbose=0,
+                      verbose=1,
                       callbacks=[checkpoint, tensorboard])
 
 

@@ -444,20 +444,20 @@ class Transformer(Layer):
         values = tf.tensordot(keys, self.W_Value, axes=(-1, 0))
 
         # head_num*None T_q D
-        querys = tf.concat(tf.split(querys, self.head_num, axis=2), axis=0)
+        querys = tf.concat(tf.split(querys, self.head_num, axis=2), axis=0)  # [?, 4, 8] -> [? * 8, 4, 1]
         keys = tf.concat(tf.split(keys, self.head_num, axis=2), axis=0)
         values = tf.concat(tf.split(values, self.head_num, axis=2), axis=0)
 
         # head_num*None T_q T_k
-        outputs = tf.matmul(querys, keys, transpose_b=True)
+        outputs = tf.matmul(querys, keys, transpose_b=True)  # [?, 4, 1] * [?, 1, 4] -> [?, 4, 4]
 
         outputs = outputs / (keys.get_shape().as_list()[-1] ** 0.5)
 
-        key_masks = tf.tile(key_masks, [self.head_num, 1])
+        key_masks = tf.tile(key_masks, [self.head_num, 1])  # [?, 4] -> [? * 8, 4]
 
         # (h*N, T_q, T_k)
         key_masks = tf.tile(tf.expand_dims(key_masks, 1),
-                            [1, tf.shape(queries)[1], 1])
+                            [1, tf.shape(queries)[1], 1])  # [? * 8, 4] -> [? * 8, 1, 4] ->  [? * 8, ? * 8 * 1, 4]
 
         paddings = tf.ones_like(outputs) * (-2 ** 32 + 1)
 

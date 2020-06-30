@@ -74,3 +74,7 @@
 74	10	literal.raw.query	10|qid	5000002	multi-cat	5	w&d
 75	44	srcquery.srcquery	44|sq	24500002	multi-cat	5	w&d
 76	47	srcquery.srcexpand	47|sexp	150000002	multi-cat	5	w
+77	28	context.site.querydict.cluster	28|ls	200000002	multi-cat	5	w
+78	49	srcquery.srcweight	49|swei	210000002	multi-cat	5	w
+79	45	srcquery.srccurquery	45|scq	260000002	multi-cat	5	w
+80	51	srcquery.srcdayoffset	51|soff	300000002	multi-cat	5	w

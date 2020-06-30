@@ -1,7 +1,9 @@
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 from sklearn.preprocessing import LabelEncoder
 from tensorflow.python.keras.preprocessing.sequence import pad_sequences
+from tensorflow.python.keras.backend import set_session, get_session, count_params
 
 from deepctr.models import DeepFM
 from deepctr.inputs import SparseFeat, VarLenSparseFeat, get_feature_names
@@ -17,6 +19,10 @@ def split(x):
 
 
 if __name__ == "__main__":
+  config = tf.ConfigProto()
+  config.gpu_options.allow_growth = True
+  # config.gpu_options.per_process_gpu_memory_fraction = 0.9
+  set_session(tf.Session(config=config))
   data = pd.read_csv("./movielens_sample.txt")
   sparse_features = ["movie_id", "user_id",
                      "gender", "age", "occupation", "zip", ]
@@ -54,6 +60,12 @@ if __name__ == "__main__":
   # 4.Define Model,compile and train
   model = DeepFM(linear_feature_columns, dnn_feature_columns, task='regression')
 
+  trainable_count = int(np.sum([count_params(p) for p in set(model.trainable_weights)]))
+  non_trainable_count = int(np.sum([count_params(p) for p in set(model.non_trainable_weights)]))
+  print('Total params: {:,}'.format(trainable_count + non_trainable_count))
+  print('Trainable params: {:,}'.format(trainable_count))
+  print('Non-trainable params: {:,}'.format(non_trainable_count))
+
   model.compile("adam", "mse", metrics=['mse'], )
   history = model.fit(model_input, data[target].values,
-                      batch_size=256, epochs=10, verbose=2, validation_split=0.2, )
+                      batch_size=256, epochs=10000, verbose=2, validation_split=0.2, )
